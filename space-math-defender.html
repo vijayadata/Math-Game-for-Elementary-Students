@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Space Math Defender</title>
+  <style>
+    :root{
+      --bg:#061226; --panel:#0b2540; --accent:#5ad1ff; --good:#5ee07a; --bad:#ff6b6b;
+      --font: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#032037);font-family:var(--font);color:#e6f7ff}
+    #gameWrap{max-width:900px;margin:24px auto;padding:12px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow:0 6px 30px rgba(0,0,0,0.6);}
+    header{display:flex;align-items:center;gap:12px;padding:8px 6px}
+    h1{font-size:20px;margin:0}
+    #topRow{display:flex;gap:12px;align-items:center;justify-content:space-between}
+    .panel{background:var(--panel);padding:8px;border-radius:10px;display:flex;gap:8px;align-items:center}
+    #hud{display:flex;gap:8px;align-items:center;}
+    #canvas{display:block;background:linear-gradient(180deg,#04293a,#021724);border-radius:8px;width:100%;height:520px}
+    .small{font-size:13px;color:#bfecff}
+    button{background:var(--accent);border:none;color:#022;padding:8px 10px;border-radius:8px;cursor:pointer;font-weight:600}
+    input[type="text"]{padding:8px;border-radius:8px;border:none;width:120px}
+    #controls{display:flex;gap:8px;align-items:center}
+    #message{min-width:240px}
+    footer{padding:8px 6px;font-size:13px;color:#bfecff}
+    .score{font-weight:700;color:var(--accent)}
+    .bar{height:10px;background:#08334d;border-radius:8px;overflow:hidden;width:200px}
+    .barFill{height:100%;background:linear-gradient(90deg,var(--good),#2dd27b);width:0%}
+    .answerBtn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:8px;color:#e6f7ff;cursor:pointer}
+    .muted{color:#9fdcff;font-size:13px}
+    .tiny{font-size:12px;color:#9fdcff}
+  </style>
+</head>
+<body>
+  <div id="gameWrap">
+    <header>
+      <div>
+        <h1>🚀 Space Math Defender</h1>
+        <div class="tiny">Answer problems to shoot asteroids. Keep the planet safe!</div>
+      </div>
+      <div style="margin-left:auto" class="small muted">For kids — adaptable to many subjects</div>
+    </header>
+
+    <div id="topRow">
+      <div class="panel" id="hud">
+        <div>Lives: <span id="lives" class="score">3</span></div>
+        <div>Score: <span id="score" class="score">0</span></div>
+        <div>Level: <span id="level" class="score">1</span></div>
+        <div style="display:flex;flex-direction:column">
+          <div class="tiny">Planet health</div>
+          <div class="bar"><div id="healthFill" class="barFill"></div></div>
+        </div>
+      </div>
+
+      <div class="panel" id="controls">
+        <label class="tiny">Difficulty:</label>
+        <select id="difficulty" class="tiny">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+        <button id="startBtn">Start Game</button>
+        <button id="pauseBtn">Pause</button>
+      </div>
+    </div>
+
+    <canvas id="canvas" width="860" height="520"></canvas>
+
+    <div style="display:flex;gap:12px;align-items:center;padding:10px 0">
+      <div id="message" class="panel" style="flex:1">
+        <div class="tiny">Problem:</div>
+        <div id="problem" style="font-size:20px;font-weight:700;margin-top:6px">—</div>
+      </div>
+
+      <div class="panel" style="align-items:flex-start">
+        <div class="tiny">Type answer then press Enter</div>
+        <input id="answer" type="text" inputmode="numeric" placeholder="Your answer" />
+        <button id="submit">Submit</button>
+      </div>
+    </div>
+
+    <footer>
+      <div class="muted">Tip: Use this base game to teach math, spelling, vocabulary, and more. Scroll down for how to adapt it.</div>
+    </footer>
+  </div>
+
+<script>
+/* Space Math Defender
+   - Simple educational game implemented in vanilla JS + canvas
+   - Learning objective: practice arithmetic (addition/subtraction/multiplication)
+   - Extensible to other subjects (vocab, spelling) by changing problem generator and checks.
+*/
+
+/* ------- Config & state ------- */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const submitBtn = document.getElementById('submit');
+const ansInput = document.getElementById('answer');
+const difficultySelect = document.getElementById('difficulty');
+const problemDiv = document.getElementById('problem');
+const livesSpan = document.getElementById('lives');
+const scoreSpan = document.getElementById('score');
+const levelSpan = document.getElementById('level');
+const healthFill = document.getElementById('healthFill');
+
+let gameRunning = false;
+let paused = false;
+let lastTime = 0;
+let spawnTimer = 0;
+let spawnInterval = 2400; // ms
+let asteroids = [];
+let bullets = [];
+let problems = []; // each asteroid has a problem
+let score = 0;
+let lives = 3;
+let level = 1;
+let planetHealth = 100;
+let currentProblem = null;
+let difficulty = 'medium';
+
+/* Canvas sizing (responsive-ish) */
+function fitCanvas(){
+  // keep internal resolution constant for simplicity
+}
+fitCanvas();
+
+/* ------- Utility functions ------- */
+function rand(min, max){ return Math.random()*(max-min)+min; }
+function choose(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+/* ------- Problem generator (math) ------- */
+function generateProblem(){
+  // difficulty alters numbers and operation types
+  const dif = difficulty;
+  let a,b,op,answer,text;
+  if(dif==='easy'){
+    a = Math.floor(rand(1,10));
+    b = Math.floor(rand(1,10));
+    op = choose(['+','-']);
+  } else if(dif==='medium'){
+    a = Math.floor(rand(2,20));
+    b = Math.floor(rand(2,12));
+    op = choose(['+','-','*']);
+  } else {
+    a = Math.floor(rand(10,50));
+    b = Math.floor(rand(6,25));
+    op = choose(['+','-','*']);
+  }
+  if(op==='+') answer = a+b;
+  if(op==='-') answer = a-b;
+  if(op==='*') answer = a*b;
+  text = `${a} ${op} ${b}`;
+  return { text, answer };
+}
+
+/* ------- Entities ------- */
+class Asteroid {
+  constructor(x,y,size,spd,problem){
+    this.x = x; this.y = y; this.size = size; this.spd = spd; this.problem = problem;
+    this.angle = rand(0,Math.PI*2);
+  }
+  update(dt){
+    this.y += this.spd * dt;
+    this.x += Math.sin(this.angle + this.y*0.001)*0.3;
+  }
+  draw(ctx){
+    ctx.save();
+    ctx.translate(this.x,this.y);
+    // body
+    ctx.beginPath();
+    ctx.fillStyle = '#7a6b4a';
+    ctx.arc(0,0,this.size,0,Math.PI*2);
+    ctx.fill();
+    // problem text
+    ctx.fillStyle = '#eaf7ff';
+    ctx.font = `${Math.max(12, this.size/1.4)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.problem.text, 0, 0);
+    ctx.restore();
+  }
+}
+
+class Bullet {
+  constructor(x,y,target){
+    this.x = x; this.y = y; this.target = target; this.spd = 700; this.dead=false;
+  }
+  update(dt){
+    // move toward target
+    const dx = this.target.x - this.x;
+    const dy = this.target.y - this.y;
+    const dist = Math.hypot(dx,dy);
+    const step = this.spd * dt;
+    if(dist < step || this.target._dead){
+      // hit or target gone
+      this.dead = true;
+      if(!this.target._dead) this.target._dead = true;
+      return;
+    }
+    this.x += (dx/dist)*step;
+    this.y += (dy/dist)*step;
+  }
+  draw(ctx){
+    ctx.beginPath();
+    ctx.fillStyle = '#8bdcff';
+    ctx.arc(this.x,this.y,5,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+/* ------- Game logic ------- */
+
+function resetGame(){
+  asteroids = [];
+  bullets = [];
+  score = 0;
+  lives = 3;
+  level = 1;
+  planetHealth = 100;
+  currentProblem = null;
+  spawnInterval = 2400;
+  updateHUD();
+}
+
+function startGame(){
+  difficulty = difficultySelect.value;
+  resetGame();
+  gameRunning = true;
+  paused = false;
+  lastTime = performance.now();
+  spawnTimer = 0;
+  loop(lastTime);
+  ansInput.focus();
+}
+
+function togglePause(){
+  if(!gameRunning) return;
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  if(!paused) {
+    lastTime = performance.now();
+    loop(lastTime);
+  }
+}
+
+function spawnAsteroid(){
+  const x = rand(60, canvas.width - 60);
+  const y = -60;
+  const sz = rand(34,56);
+  const spd = rand(40,80) + level*4;
+  const prob = generateProblem();
+  const ast = new Asteroid(x,y,sz,spd,prob);
+  ast._dead = false;
+  asteroids.push(ast);
+  // if there's no active problem, set this as current
+  if(!currentProblem) {
+    currentProblem = ast;
+    updateProblemPanel();
+  }
+}
+
+function updateProblemPanel(){
+  if(currentProblem){
+    problemDiv.textContent = currentProblem.problem.text;
+  } else {
+    problemDiv.textContent = "—";
+  }
+}
+
+function fireAt(asteroid){
+  const shipX = canvas.width/2;
+  const shipY = canvas.height - 40;
+  bullets.push(new Bullet(shipX, shipY, asteroid));
+}
+
+function handleAnswer(input){
+  if(!currentProblem) return;
+  const numeric = Number(input);
+  if(String(input).trim()==="") return;
+  if(numeric === currentProblem.problem.answer){
+    // correct
+    score += 10 + Math.round(level*2);
+    // find asteroid object and mark dead, spawn bullet
+    currentProblem._dead = true;
+    fireAt(currentProblem);
+    // find another problem (next alive asteroid)
+    currentProblem = asteroids.find(a => !a._dead && a.y > -100) || null;
+    updateProblemPanel();
+    ansInput.value = "";
+    updateHUD();
+    showFloatingText('+'+(10+Math.round(level*2)), canvas.width/2, canvas.height-70, '#5ee07a');
+  } else {
+    // wrong
+    score = Math.max(0, score - 3);
+    lives -= 0; // optional penalty
+    showFloatingText('Try again!', canvas.width/2, canvas.height-70, '#ffb3b3');
+    ansInput.value = "";
+    updateHUD();
+  }
+}
+
+/* visual floating text */
+const floats = [];
+function showFloatingText(txt,x,y,color){
+  floats.push({txt,x,y,life:120,color});
+}
+
+/* ------- HUD ------- */
+function updateHUD(){
+  livesSpan.textContent = Math.max(0, Math.floor(lives));
+  scoreSpan.textContent = score;
+  levelSpan.textContent = level;
+  healthFill.style.width = Math.max(0, planetHealth)+'%';
+}
+
+/* ------- Main loop ------- */
+function loop(now){
+  if(!gameRunning || paused) return;
+  const dt = Math.min(40, now - lastTime) / 1000;
+  lastTime = now;
+
+  // spawn logic
+  spawnTimer += (dt*1000);
+  // dynamic spawn: faster as level increases
+  const base = spawnInterval - (level-1)*120;
+  if(spawnTimer > Math.max(700, base)){
+    spawnTimer = 0;
+    spawnAsteroid();
+  }
+
+  // update asteroids
+  asteroids.forEach(a => {
+    if(!a._dead) a.update(dt);
+  });
+
+  // update bullets
+  bullets.forEach(b => b.update(dt));
+  bullets = bullets.filter(b => !b.dead);
+
+  // handle asteroid reaching planet
+  asteroids.forEach(a=>{
+    if(!a._dead && a.y > canvas.height - 80){
+      a._dead = true;
+      planetHealth -= Math.min(35, Math.round(a.size/2));
+      showFloatingText('-'+Math.min(35, Math.round(a.size/2)), a.x, canvas.height-60, '#ff6b6b');
+      if(planetHealth <= 0){
+        lives = 0;
+      }
+    }
+  });
+
+  // clear dead asteroids and reward points for destroyed
+  asteroids = asteroids.filter(a=>{
+    if(a._dead){
+      // reward more if solved quickly (simple measure)
+      score += 2 + Math.round((60 - Math.abs(a.y))/30);
+      return false; // remove
+    }
+    // remove if moved far below
+    if(a.y > canvas.height + 160) return false;
+    return true;
+  });
+
+  // level up based on score
+  const nextLevel = Math.floor(score / 100) + 1;
+  if(nextLevel > level){
+    level = nextLevel;
+    spawnInterval = Math.max(700, spawnInterval - 150);
+    showFloatingText('Level '+level, canvas.width/2, canvas.height/2, '#ffe66d');
+  }
+
+  // draw frame
+  draw();
+
+  updateHUD();
+
+  // check game over
+  if(lives <= 0 || planetHealth <= 0){
+    gameOver();
+    return;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+/* ------- Drawing ------- */
+function draw(){
+  // background
+  ctx.fillStyle = '#021724';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // stars
+  for(let i=0;i<60;i++){
+    // light starfield (not heavy)
+    ctx.fillStyle = 'rgba(255,255,255,0.02)';
+    ctx.fillRect((i*47)%canvas.width,(i*31)%canvas.height,1,1);
+  }
+
+  // draw planet at bottom center
+  const planetX = canvas.width/2;
+  const planetY = canvas.height + 60;
+  ctx.beginPath();
+  ctx.fillStyle = '#0b4b6f';
+  ctx.arc(planetX, planetY, 260, Math.PI, Math.PI*2);
+  ctx.fill();
+
+  // ship
+  ctx.save();
+  ctx.translate(canvas.width/2, canvas.height-40);
+  ctx.beginPath();
+  ctx.fillStyle = '#8bdcff';
+  ctx.moveTo(0,-18);
+  ctx.lineTo(16,14);
+  ctx.lineTo(-16,14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // asteroids
+  asteroids.forEach(a=>{
+    a.draw(ctx);
+  });
+
+  // bullets
+  bullets.forEach(b=> b.draw(ctx));
+
+  // floating texts
+  for(let i=floats.length-1;i>=0;i--){
+    const f = floats[i];
+    ctx.font = "18px sans-serif";
+    ctx.fillStyle = f.color;
+    ctx.textAlign='center';
+    ctx.fillText(f.txt, f.x, f.y);
+    f.y -= 0.6;
+    f.life -= 1;
+    if(f.life <= 0) floats.splice(i,1);
+  }
+
+  // HUD overlay: current target highlight
+  if(currentProblem){
+    ctx.beginPath();
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = 2;
+    ctx.arc(currentProblem.x, currentProblem.y, currentProblem.size + 6, 0, Math.PI*2);
+    ctx.stroke();
+  }
+}
+
+/* ------- Game over ------- */
+function gameOver(){
+  gameRunning = false;
+  // big overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#fff';
+  ctx.font = '36px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Game Over', canvas.width/2, canvas.height/2 - 10);
+  ctx.font = '20px sans-serif';
+  ctx.fillText('Score: ' + score, canvas.width/2, canvas.height/2 + 26);
+  startBtn.textContent = 'Restart Game';
+}
+
+/* ------- Events ------- */
+startBtn.addEventListener('click', ()=> startGame());
+pauseBtn.addEventListener('click', ()=> togglePause());
+submitBtn.addEventListener('click', ()=> handleAnswer(ansInput.value));
+ansInput.addEventListener('keydown',(e)=>{
+  if(e.key === 'Enter'){ handleAnswer(ansInput.value); }
+});
+
+/* keyboard: quick target selection (1..9) to fire */
+window.addEventListener('keydown',(e)=>{
+  if(e.key >= '1' && e.key <= '9'){
+    const idx = Number(e.key) - 1;
+    const alive = asteroids.filter(a=>!a._dead);
+    if(alive[idx]) {
+      fireAt(alive[idx]);
+    }
+  }
+});
+
+/* Resize canvas to container width */
+function resize(){
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.min(860, rect.width || 860);
+  canvas.height = 520; // fixed for layout simplicity
+  draw();
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* initial HUD */
+updateHUD();
+
+</script>
